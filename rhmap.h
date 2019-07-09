@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 /*
-	`rhmap` works with zero initialization, you can alternatively call
+	`rhmap` works with zero-initialization, you can alternatively call
 	`rhmap_init()` which is equivalent to calling `memset()` to zero out
 	the structure. To free resources call `rhmap_reset()` and potentailly
 	free the resulting pointer, you can call `rhmap_clear()` to remove all
