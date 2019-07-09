@@ -18,7 +18,7 @@
 
 	`rhmap` only provides approximate mapping from hashes to indices, so
 	you need to compare the keys yourself. This is done by calling `rhmap_find()`
-	or `rhmap_insert()` repeadetly with the same `rhmap_iter`. These functions
+	or `rhmap_insert()` repeatedly with the same `rhmap_iter`. These functions
 	return 1 and write `index` if there is a potential match, 0 otherwise.
 
 		uint32_t index;
