@@ -102,6 +102,7 @@ typedef struct {
 void rhmap_init(rhmap *map);
 void *rhmap_reset(rhmap *map);
 void rhmap_clear(rhmap *map);
+
 int rhmap_validate(rhmap *map);
 int rhmap_validate_slow(rhmap *map);
 
