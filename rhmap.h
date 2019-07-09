@@ -49,6 +49,7 @@
 
 		if (map.count < map.capacity) {
 			uint32_t count, alloc_size;
+			rhmap_grow(&map, &count, &alloc_size, 0);
 			char *alloc = (char*)malloc(alloc_size + sizeof(my_data_t) * count);
 			memcpy(alloc + alloc_size, data, sizeof(my_data_t) * map.size);
 			data = (my_data_t*)(alloc + alloc_size);
