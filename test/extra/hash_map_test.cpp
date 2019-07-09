@@ -1,5 +1,6 @@
 #include "../../extra/hash_map.h"
 #include <string.h>
+#include <assert.h>
 
 struct string
 {
@@ -38,11 +39,16 @@ int main(int argc, char **argv)
 {
 	{
 		hash_map<string, int> str_map;
+		assert(rhmap_validate_slow(&str_map.imp));
 		str_map["1"] = 1;
 		str_map["2"] = 2;
 		str_map["3"] = 3;
+		assert(rhmap_validate_slow(&str_map.imp));
 		int x = str_map.find("2")->value;
+		assert(x == 2);
 	}
+
+	return 0;
 }
 
 #define RHMAP_IMPLEMENTATION

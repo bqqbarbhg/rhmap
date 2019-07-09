@@ -100,8 +100,10 @@ typedef struct {
 } rhmap_iter;
 
 void rhmap_init(rhmap *map);
-void rhmap_clear(rhmap *map);
 void *rhmap_reset(rhmap *map);
+void rhmap_clear(rhmap *map);
+int rhmap_validate(rhmap *map);
+int rhmap_validate_slow(rhmap *map);
 
 int rhmap_find(rhmap_iter *iter, uint32_t *index);
 int rhmap_insert(rhmap_iter *iter, uint32_t *index);
@@ -169,6 +171,53 @@ void rhmap_clear(rhmap *map)
 {
 	map->size = 0;
 	memset(map->entries, 0, sizeof(uint32_t) * (map->mask + 1));
+}
+
+int rhmap_validate(rhmap *map)
+{
+	/* Sizes are in bounds */
+	if (map->capacity > map->mask + 1) return 0;
+	if (map->size > map->capacity) return 0;
+	if (map->load_factor < 0.0f || map->load_factor > 1.0f) return 0;
+	/* Mask must be a power of two minus one */
+	if ((map->mask + 1) & map->mask) return 0;
+	if (map->mask) {
+		/* If there are entries check memory layout */
+		if (!map->entries) return 0;
+		if (map->hashes != map->entries + map->mask + 1) return 0;
+	} else {
+		/* If there are no entries there should be no pointer.
+		 * Note: `hashes` can be `NULL` */
+		if (map->entries) return 0;
+	}
+	return 1;
+}
+
+int rhmap_validate_slow(rhmap *map)
+{
+	uint32_t i, prev_probe = 0, found = 0;
+	if (!rhmap_validate(map)) return 0;
+	if (!map->mask) return 1;
+	for (i = 0; i <= map->mask; i++) {
+		uint32_t index, hash, probe, ref, entry = map->entries[i];
+		if (!entry) {
+			prev_probe = 0;
+			continue;
+		}
+		found++;
+		/* Form a reference entry based on the actual `hash` */
+		index = (entry & map->mask);
+		hash = map->hashes[index];
+		probe = ((i - hash) & map->mask) + 1;
+		if (probe > 15) probe = 15;
+		ref = (hash & ~map->mask & 0x0fffffffu) | (probe << 28u) | index;
+		if (entry != ref) return 0;
+		/* Check Robin Hood invariant */
+		if (probe < prev_probe) return 0;
+		prev_probe = 0;
+	}
+	if (found != map->size) return 0;
+	return 1;
 }
 
 void rhmap_grow(rhmap *map, uint32_t *count, uint32_t *alloc_size, uint32_t initial_size)
