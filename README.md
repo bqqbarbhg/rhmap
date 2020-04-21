@@ -32,11 +32,11 @@ to calculate required internal data size and entry count.
 
 ```c
 if (map.size == map.capacity) {
-	size_t count, alloc_size;
-	rhmap_grow(&map, &count, &alloc_size, 8, 0.0);
-	void *new_data = malloc(alloc_size);
-	void *old_data = rhmap_rehash(&map, count, alloc_size, new_data);
-	free(old_data);
+    size_t count, alloc_size;
+    rhmap_grow(&map, &count, &alloc_size, 8, 0.0);
+    void *new_data = malloc(alloc_size);
+    void *old_data = rhmap_rehash(&map, count, alloc_size, new_data);
+    free(old_data);
 }
 ```
 
@@ -73,9 +73,9 @@ a matching hash. `rhmap_insert()` inserts a new value at the current position.
 // Try to find the entry from the map
 uint32_t hash = hash_key(&key), scan = 0, index;
 while (rhmap_find(&map, hash, &scan, &index)) {
-	if (my_entries[index].key == key) {
-		return &my_entries[index];
-	}
+    if (my_entries[index].key == key) {
+        return &my_entries[index];
+    }
 }
 
 // Insert to the end of `my_entries` array
@@ -93,14 +93,14 @@ swap the last entry and the removed one and use `rhmap_update_value()` to
 // Find the entry from the map
 uint32_t hash = hash_key(&key), scan = 0, index;
 while (rhmap_find(&map, hash, &scan, &index)) {
-	if (my_entries[index].key == key) break;
+    if (my_entries[index].key == key) break;
 }
 
 rhmap_remove(&map, hash, &scan);
 if (index < map.size) {
-	uint32_t swap_hash = hash_key(&my_entries[map.size].key);
-	rhmap_update_value(&map, swap_hash, map.size, index);
-	my_entries[index] = my_entries[map.size];
+    uint32_t swap_hash = hash_key(&my_entries[map.size].key);
+    rhmap_update_value(&map, swap_hash, map.size, index);
+    my_entries[index] = my_entries[map.size];
 }
 ```
 
@@ -113,9 +113,9 @@ afterwards to continue iteration.
 // Remove even values from a U32->U32 map
 uint32_t hash = 0, scan = 0, value;
 while (rhmap_next(&map, &hash, &scan, &value)) {
-	if (value % 2 == 0) {
-		rhmap_remove(&map, hash, &scan);
-	}
+    if (value % 2 == 0) {
+        rhmap_remove(&map, hash, &scan);
+    }
 }
 ```
 
