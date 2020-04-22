@@ -4,10 +4,11 @@
 
 namespace rh {
 
-stdlib_allocator_type stdlib_allocator;
-
-void *stdlib_allocator_type::allocate(size_t size) { return ::malloc(size); }
-void stdlib_allocator_type::free(void *ptr, size_t size) { ::free(ptr); }
+const allocator stdlib_allocator = {
+	NULL,
+	[](void *user, size_t size) { return ::malloc(size); },
+	[](void *user, void *ptr, size_t size) { ::free(ptr); },
+};
 
 uint32_t hash_buffer(const void *data, size_t size)
 {
@@ -120,7 +121,7 @@ void hash_base::reset()
 	if (map.size > 0) type.destruct_range(values, map.size);
 	size_t old_size = rhmap_alloc_size_inline(&map) + map.capacity * type.size;
 	void *old_data = rhmap_reset_inline(&map);
-	ator->free(old_data, old_size);
+	if (old_size) ator->free(ator->user, old_data, old_size);
 }
 
 void hash_base::imp_grow(size_t min_size) {
@@ -132,13 +133,13 @@ void hash_base::imp_grow(size_t min_size) {
 
 void hash_base::imp_rehash(size_t count, size_t alloc_size)
 {
-	void *new_data = ator->allocate(alloc_size + type.size * count);
+	void *new_data = ator->allocate(ator->user, alloc_size + type.size * count);
 	void *new_values = (char*)new_data + alloc_size;
 	type.move_range(new_values, values, map.size);
 	values = new_values;
 	size_t old_size = rhmap_alloc_size_inline(&map) + map.capacity * type.size;
 	void *old_data = rhmap_rehash_inline(&map, count, alloc_size, new_data);
-	ator->free(old_data, old_size);
+	if (old_size) ator->free(ator->user, old_data, old_size);
 }
 
 void hash_base::imp_erase_last(uint32_t hash, uint32_t index)

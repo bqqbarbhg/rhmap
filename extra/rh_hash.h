@@ -52,16 +52,12 @@ struct buffer_hash {
 };
 
 struct allocator {
-	virtual void *allocate(size_t size) = 0;
-	virtual void free(void *ptr, size_t size) = 0;
+	void *user;
+	void *(*allocate)(void *user, size_t size) = 0;
+	void (*free)(void *user, void *ptr, size_t size) = 0;
 };
 
-struct stdlib_allocator_type final : allocator {
-	virtual void *allocate(size_t size);
-	virtual void free(void *ptr, size_t size);
-};
-
-extern stdlib_allocator_type stdlib_allocator;
+extern const allocator stdlib_allocator;
 
 struct type_info {
 	size_t size;
@@ -98,7 +94,7 @@ type_info type_info_for<T>::info = {
 
 struct hash_base
 {
-	hash_base(type_info &type, allocator *ator) : type(type), ator(ator) { }
+	hash_base(type_info &type, const allocator *ator) : type(type), ator(ator) { }
 	~hash_base() { reset(); }
 
 	hash_base(const hash_base &rhs);
@@ -125,7 +121,7 @@ protected:
 	rhmap map = { };
 	void *values = nullptr;
 	type_info &type;
-	allocator *ator;
+	const allocator *ator;
 
 	void imp_grow(size_t min_size);
 	void imp_rehash(size_t count, size_t alloc_size);
@@ -146,7 +142,9 @@ struct insert_result {
 	bool inserted;
 };
 
-template <typename K, typename V, typename Hash = default_hash<K>>
+template <typename K, typename V
+	, typename Hash = default_hash<K>
+	, const allocator *Allocator=&stdlib_allocator>
 struct hash_map : hash_base
 {
 	using key_type = K;
@@ -161,7 +159,7 @@ struct hash_map : hash_base
 	using const_iterator = const value_type*;
 
 	explicit hash_map(const Hash &hash_fn=Hash())
-		: hash_base(type_info_for<value_type>::info, &stdlib_allocator), hash_fn(hash_fn) { }
+		: hash_base(type_info_for<value_type>::info, Allocator), hash_fn(hash_fn) { }
 	explicit hash_map(allocator *ator, const Hash &hash_fn=Hash())
 		: hash_base(type_info_for<value_type>::info, ator), hash_fn(hash_fn) { }
 
@@ -260,7 +258,9 @@ protected:
 	}
 };
 
-template <typename T, typename Hash = default_hash<T>>
+template <typename T
+	, typename Hash = default_hash<T>
+	, const allocator *Allocator=&stdlib_allocator>
 struct hash_set : hash_base
 {
 	using key_type = T;
@@ -275,7 +275,7 @@ struct hash_set : hash_base
 	using const_iterator = const value_type*;
 
 	explicit hash_set(const Hash &hash_fn=Hash())
-		: hash_base(type_info_for<value_type>::info, &stdlib_allocator), hash_fn(hash_fn) { }
+		: hash_base(type_info_for<value_type>::info, Allocator), hash_fn(hash_fn) { }
 	explicit hash_set(allocator *ator, const Hash &hash_fn=Hash())
 		: hash_base(type_info_for<value_type>::info, ator), hash_fn(hash_fn) { }
 

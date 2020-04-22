@@ -3,6 +3,8 @@
 #include <string>
 #include <functional>
 #include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 namespace ns {
 
@@ -11,37 +13,49 @@ namespace ns {
 		bool operator==(const handle &rhs) const { return index == rhs.index; }
 	};
 
-	struct test_allocator : rh::allocator {
-		void *allocate(size_t size) { return ::malloc(size); }
-		void free(void *ptr, size_t size) { ::free(ptr); }
+	void *allocate(void *user, size_t size) {
+		printf("Alloc: %zu\n", size);
+		return ::malloc(size);
+	}
+
+	void free(void *user, void *ptr, size_t size) {
+		printf("Free: %zu\n", size);
+		::free(ptr);
+	}
+
+	rh::allocator alloc = {
+		NULL, &allocate, &free
 	};
 
-	test_allocator allocator;
+	template <typename K, typename V, typename Hash=rh::default_hash<K>>
+	using HashMap = rh::hash_map<K, V, Hash, &alloc>;
 
 }
 
 int main(int argc, char **argv)
 {
-	rh::hash_map<std::string, int> map;
-	rh::hash_map<int, std::string> map2;
-	rh::hash_map<ns::handle, std::string, rh::buffer_hash<ns::handle>> map3;
-	rh::hash_set<int> set { &ns::allocator };
+	{
+		rh::hash_map<std::string, int> map;
+		rh::hash_map<int, std::string> map2;
+		ns::HashMap<ns::handle, std::string, rh::buffer_hash<ns::handle>> map3;
+		rh::hash_set<int> set;
 
-	for (int i = 0; i < 1000; i++) {
-		map[std::to_string(i)] = i;
-		map2[i] = std::to_string(i);
-		map3[{(uint32_t)i}] = std::to_string(i);
-		set.insert(i/2);
-	}
+		for (int i = 0; i < 1000; i++) {
+			map[std::to_string(i)] = i;
+			map2[i] = std::to_string(i);
+			map3[{(uint32_t)i}] = std::to_string(i);
+			set.insert(i/2);
+		}
 
-	assert(map.size() == 1000);
+		assert(map.size() == 1000);
 
-	for (int i = 0; i < 1000; i++) {
-		std::string str = std::to_string(i);
-		auto it = map.find(str);
-		assert(it->key == std::to_string(i));
-		assert(it->value == i);
-		assert((set.find(i) != nullptr) == (i < 500));
+		for (int i = 0; i < 1000; i++) {
+			std::string str = std::to_string(i);
+			auto it = map.find(str);
+			assert(it->key == std::to_string(i));
+			assert(it->value == i);
+			assert((set.find(i) != nullptr) == (i < 500));
+		}
 	}
 
 	return 0;
