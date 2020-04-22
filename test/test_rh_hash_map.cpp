@@ -10,6 +10,14 @@ namespace ns {
 		uint32_t index;
 		bool operator==(const handle &rhs) const { return index == rhs.index; }
 	};
+
+	struct test_allocator : rh::allocator {
+		void *allocate(size_t size) { return ::malloc(size); }
+		void free(void *ptr, size_t size) { ::free(ptr); }
+	};
+
+	test_allocator allocator;
+
 }
 
 int main(int argc, char **argv)
@@ -17,7 +25,7 @@ int main(int argc, char **argv)
 	rh::hash_map<std::string, int> map;
 	rh::hash_map<int, std::string> map2;
 	rh::hash_map<ns::handle, std::string, rh::buffer_hash<ns::handle>> map3;
-	rh::hash_set<int> set;
+	rh::hash_set<int> set { &ns::allocator };
 
 	for (int i = 0; i < 1000; i++) {
 		map[std::to_string(i)] = i;

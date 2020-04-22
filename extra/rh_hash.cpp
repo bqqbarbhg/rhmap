@@ -1,6 +1,13 @@
 #include "rh_hash.h"
 
+#include <stdlib.h>
+
 namespace rh {
+
+stdlib_allocator_type stdlib_allocator;
+
+void *stdlib_allocator_type::allocate(size_t size) { return ::malloc(size); }
+void stdlib_allocator_type::free(void *ptr, size_t size) { ::free(ptr); }
 
 uint32_t hash_buffer(const void *data, size_t size)
 {
@@ -60,7 +67,7 @@ uint32_t hash(uint64_t v)
 	return (uint32_t)v;
 }
 
-hash_base::hash_base(const hash_base &rhs) : type(rhs.type)
+hash_base::hash_base(const hash_base &rhs) : type(rhs.type), ator(rhs.ator)
 {
 	imp_copy(rhs);
 }
@@ -68,7 +75,12 @@ hash_base::hash_base(const hash_base &rhs) : type(rhs.type)
 hash_base &hash_base::operator=(const hash_base &rhs)
 {
 	if (&rhs == this) return *this;
-	clear();
+	if (ator != rhs.ator) {
+		reset();
+		ator = rhs.ator;
+	} else {
+		clear();
+	}
 	imp_copy(rhs);
 	return *this;
 }
@@ -76,6 +88,8 @@ hash_base &hash_base::operator=(const hash_base &rhs)
 hash_base &hash_base::operator=(hash_base &&rhs) noexcept
 {
 	if (&rhs == this) return *this;
+	reset();
+	ator = rhs.ator;
 	map = rhs.map;
 	values = rhs.values;
 	rhmap_reset_inline(&rhs.map);
@@ -104,7 +118,9 @@ void hash_base::clear() noexcept
 void hash_base::reset()
 {
 	if (map.size > 0) type.destruct_range(values, map.size);
-	free(rhmap_reset_inline(&map));
+	size_t old_size = rhmap_alloc_size_inline(&map) + map.capacity * type.size;
+	void *old_data = rhmap_reset_inline(&map);
+	ator->free(old_data, old_size);
 }
 
 void hash_base::imp_grow(size_t min_size) {
@@ -116,11 +132,13 @@ void hash_base::imp_grow(size_t min_size) {
 
 void hash_base::imp_rehash(size_t count, size_t alloc_size)
 {
-	void *new_data = malloc(alloc_size + type.size * count);
+	void *new_data = ator->allocate(alloc_size + type.size * count);
 	void *new_values = (char*)new_data + alloc_size;
 	type.move_range(new_values, values, map.size);
 	values = new_values;
-	free(rhmap_rehash_inline(&map, count, alloc_size, new_data));
+	size_t old_size = rhmap_alloc_size_inline(&map) + map.capacity * type.size;
+	void *old_data = rhmap_rehash_inline(&map, count, alloc_size, new_data);
+	ator->free(old_data, old_size);
 }
 
 void hash_base::imp_erase_last(uint32_t hash, uint32_t index)

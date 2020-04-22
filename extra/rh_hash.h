@@ -6,7 +6,6 @@
 
 #include <new>
 #include <utility>
-#include <stdlib.h>
 #include <string.h>
 
 namespace rh {
@@ -52,6 +51,18 @@ struct buffer_hash {
 	}
 };
 
+struct allocator {
+	virtual void *allocate(size_t size) = 0;
+	virtual void free(void *ptr, size_t size) = 0;
+};
+
+struct stdlib_allocator_type final : allocator {
+	virtual void *allocate(size_t size);
+	virtual void free(void *ptr, size_t size);
+};
+
+extern stdlib_allocator_type stdlib_allocator;
+
 struct type_info {
 	size_t size;
 	void (*copy_range)(void *dst, const void *src, size_t count);
@@ -87,11 +98,11 @@ type_info type_info_for<T>::info = {
 
 struct hash_base
 {
-	hash_base(type_info &type) : type(type) { }
+	hash_base(type_info &type, allocator *ator) : type(type), ator(ator) { }
 	~hash_base() { reset(); }
 
 	hash_base(const hash_base &rhs);
-	hash_base(hash_base &&rhs) noexcept : map(rhs.map), values(rhs.values), type(rhs.type) {
+	hash_base(hash_base &&rhs) noexcept : map(rhs.map), values(rhs.values), type(rhs.type), ator(rhs.ator) {
 		rhmap_reset_inline(&rhs.map);
 		rhs.values = nullptr;
 	}
@@ -114,6 +125,7 @@ protected:
 	rhmap map = { };
 	void *values = nullptr;
 	type_info &type;
+	allocator *ator;
 
 	void imp_grow(size_t min_size);
 	void imp_rehash(size_t count, size_t alloc_size);
@@ -148,7 +160,10 @@ struct hash_map : hash_base
 	using iterator = value_type*;
 	using const_iterator = const value_type*;
 
-	hash_map(const Hash &hash_fn=Hash()) : hash_base(type_info_for<value_type>::info), hash_fn(hash_fn) { }
+	explicit hash_map(const Hash &hash_fn=Hash())
+		: hash_base(type_info_for<value_type>::info, &stdlib_allocator), hash_fn(hash_fn) { }
+	explicit hash_map(allocator *ator, const Hash &hash_fn=Hash())
+		: hash_base(type_info_for<value_type>::info, ator), hash_fn(hash_fn) { }
 
 	RHMAP_FORCEINLINE iterator begin() noexcept { return ((value_type*)values); }
 	RHMAP_FORCEINLINE const_iterator begin() const noexcept { return ((value_type*)values); }
@@ -259,7 +274,10 @@ struct hash_set : hash_base
 	using iterator = value_type*;
 	using const_iterator = const value_type*;
 
-	hash_set(const Hash &hash_fn=Hash()) : hash_base(type_info_for<value_type>::info), hash_fn(hash_fn) { }
+	explicit hash_set(const Hash &hash_fn=Hash())
+		: hash_base(type_info_for<value_type>::info, &stdlib_allocator), hash_fn(hash_fn) { }
+	explicit hash_set(allocator *ator, const Hash &hash_fn=Hash())
+		: hash_base(type_info_for<value_type>::info, ator), hash_fn(hash_fn) { }
 
 	RHMAP_FORCEINLINE iterator begin() noexcept { return ((value_type*)values); }
 	RHMAP_FORCEINLINE const_iterator begin() const noexcept { return ((value_type*)values); }
