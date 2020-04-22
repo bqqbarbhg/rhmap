@@ -1,8 +1,5 @@
 #include "../extra/rh_hash.h"
 
-#define RHMAP_IMPLEMENTATION
-#include "rhmap.h"
-
 #include <string>
 #include <functional>
 #include <assert.h>
@@ -13,16 +10,13 @@ namespace ns {
 		uint32_t index;
 		bool operator==(const handle &rhs) const { return index == rhs.index; }
 	};
-
-	uint32_t hash(const handle &h) { return rh::hash(h.index); }
-
 }
 
 int main(int argc, char **argv)
 {
 	rh::hash_map<std::string, int> map;
 	rh::hash_map<int, std::string> map2;
-	rh::hash_map<ns::handle, std::string> map3;
+	rh::hash_map<ns::handle, std::string, rh::buffer_hash<ns::handle>> map3;
 	rh::hash_set<int> set;
 
 	for (int i = 0; i < 1000; i++) {

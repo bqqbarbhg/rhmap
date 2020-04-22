@@ -11,27 +11,45 @@
 
 namespace rh {
 
+uint32_t hash_buffer(const void *data, size_t size);
+uint32_t hash_buffer_align4(const void *data, size_t size);
+
 uint32_t hash(uint32_t v);
 uint32_t hash(uint64_t v);
 
-inline uint32_t hash(bool v) { return v; }
-inline uint32_t hash(char v) { return hash((uint32_t)v); }
-inline uint32_t hash(uint8_t v) { return hash((uint32_t)v); }
-inline uint32_t hash(int8_t v) { return hash((uint32_t)v); }
-inline uint32_t hash(uint16_t v) { return hash((uint32_t)v); }
-inline uint32_t hash(int16_t v) { return hash((uint32_t)(uint16_t)v); }
-inline uint32_t hash(int32_t v) { return hash((uint32_t)v); }
-inline uint32_t hash(int64_t v) { return hash((uint64_t)v); }
-inline uint32_t hash(float v) { uint32_t u; memcpy(&u, &v, sizeof(float)); return hash(u); }
-inline uint32_t hash(double v) { uint64_t u; memcpy(&u, &v, sizeof(double)); return hash(u); }
-inline uint32_t hash(void *v) { return hash((uintptr_t)v); }
+static RHMAP_FORCEINLINE uint32_t hash(bool v) { return v; }
+static RHMAP_FORCEINLINE uint32_t hash(char v) { return hash((uint32_t)v); }
+static RHMAP_FORCEINLINE uint32_t hash(uint8_t v) { return hash((uint32_t)v); }
+static RHMAP_FORCEINLINE uint32_t hash(int8_t v) { return hash((uint32_t)v); }
+static RHMAP_FORCEINLINE uint32_t hash(uint16_t v) { return hash((uint32_t)v); }
+static RHMAP_FORCEINLINE uint32_t hash(int16_t v) { return hash((uint32_t)(uint16_t)v); }
+static RHMAP_FORCEINLINE uint32_t hash(int32_t v) { return hash((uint32_t)v); }
+static RHMAP_FORCEINLINE uint32_t hash(int64_t v) { return hash((uint64_t)v); }
+static RHMAP_FORCEINLINE uint32_t hash(float v) { uint32_t u; memcpy(&u, &v, sizeof(float)); return hash(u); }
+static RHMAP_FORCEINLINE uint32_t hash(double v) { uint64_t u; memcpy(&u, &v, sizeof(double)); return hash(u); }
+static RHMAP_FORCEINLINE uint32_t hash(void *v) { return hash((uintptr_t)v); }
 
 template <typename T>
-inline decltype(std::hash<T>()(*(const T*)nullptr)) hash(const T &t) { return (uint32_t)std::hash<T>()(t); }
+static RHMAP_FORCEINLINE decltype(std::hash<T>()(*(const T*)0)) hash(const T &t) {
+	return std::hash<T>()(t);
+}
 
 template <typename T>
 struct default_hash {
-	uint32_t operator()(const T &t) { return (uint32_t)hash(t); }
+	RHMAP_FORCEINLINE uint32_t operator()(const T &t) {
+		return (uint32_t)hash(t);
+	}
+};
+
+template <typename T>
+struct buffer_hash {
+	RHMAP_FORCEINLINE uint32_t operator()(const T &t) {
+		if (sizeof(t) % 4 == 0) {
+			return hash_buffer_align4(&t, sizeof(t));
+		} else {
+			return hash_buffer(&t, sizeof(t));
+		}
+	}
 };
 
 struct type_info {
@@ -222,7 +240,7 @@ protected:
 		index = map.size;
 		new ((K*)&vals[index].key) K(std::forward<KT>(key));
 		new (&vals[index].value) V(std::forward<Args>(value)...);
-		rhmap_insert(&map, hash, scan, index);
+		rhmap_insert_inline(&map, hash, scan, index);
 		return &vals[index];
 	}
 };
@@ -317,7 +335,7 @@ protected:
 		*p_inserted = true;
 		index = map.size;
 		new (&vals[index]) T(std::forward<KT>(value));
-		rhmap_insert(&map, hash, scan, index);
+		rhmap_insert_inline(&map, hash, scan, index);
 		return &vals[index];
 	}
 };

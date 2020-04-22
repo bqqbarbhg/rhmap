@@ -2,6 +2,44 @@
 
 namespace rh {
 
+uint32_t hash_buffer(const void *data, size_t size)
+{
+	uint32_t hash = 0;
+
+	const uint32_t seed = UINT32_C(0x9e3779b9);
+	const uint32_t *word = (const uint32_t*)data;
+	while (size >= 4) {
+		hash = ((hash << 5u | hash >> 27u) ^ *word++) * seed;
+		size -= 4;
+	}
+
+	return (uint32_t)hash;
+}
+
+uint32_t hash_buffer_align4(const void *data, size_t size)
+{
+	uint32_t hash = 0;
+
+	const uint32_t seed = UINT32_C(0x9e3779b9);
+	const uint32_t *word = (const uint32_t*)data;
+	while (size >= 4) {
+		hash = ((hash << 5u | hash >> 27u) ^ *word++) * seed;
+		size -= 4;
+	}
+
+	const uint8_t *byte = (const uint8_t*)word;
+	if (size > 0) {
+		uint32_t w = 0;
+		while (size > 0) {
+			w = w << 8 | *byte++;
+			size--;
+		}
+		hash = ((hash << 5u | hash >> 27u) ^ w) * seed;
+	}
+
+	return (uint32_t)hash;
+}
+
 uint32_t hash(uint32_t v)
 {
 	v ^= v >> 16;
@@ -53,7 +91,7 @@ void hash_base::reserve(size_t count)
 void hash_base::shrink_to_fit()
 {
 	size_t count, alloc_size;
-	rhmap_shrink(&map, &count, &alloc_size, 0, 0);
+	rhmap_shrink_inline(&map, &count, &alloc_size, 0, 0);
 	imp_rehash(count, alloc_size);
 }
 
@@ -72,7 +110,7 @@ void hash_base::reset()
 void hash_base::imp_grow(size_t min_size) {
 	size_t count, alloc_size;
 	if ((map.size | min_size) == 0) min_size = 64 / type.size;
-	rhmap_grow(&map, &count, &alloc_size, min_size, 0);
+	rhmap_grow_inline(&map, &count, &alloc_size, min_size, 0);
 	imp_rehash(count, alloc_size);
 }
 
@@ -82,7 +120,7 @@ void hash_base::imp_rehash(size_t count, size_t alloc_size)
 	void *new_values = (char*)new_data + alloc_size;
 	type.move_range(new_values, values, map.size);
 	values = new_values;
-	free(rhmap_rehash(&map, count, alloc_size, new_data));
+	free(rhmap_rehash_inline(&map, count, alloc_size, new_data));
 }
 
 void hash_base::imp_erase_last(uint32_t hash, uint32_t index)
