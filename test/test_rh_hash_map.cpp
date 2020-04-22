@@ -1,4 +1,4 @@
-#include "../extra/rh_hash_map.h"
+#include "../extra/rh_hash.h"
 
 #define RHMAP_IMPLEMENTATION
 #include "rhmap.h"

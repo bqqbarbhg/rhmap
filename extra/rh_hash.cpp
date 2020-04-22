@@ -1,4 +1,4 @@
-#include "rh_hash_map.h"
+#include "rh_hash.h"
 
 namespace rh {
 
