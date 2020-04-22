@@ -6,6 +6,7 @@
 
 #include <new>
 #include <utility>
+#include <type_traits>
 #include <string.h>
 
 namespace rh {
@@ -74,22 +75,41 @@ struct type_info_for : type_info {
 template <typename T>
 type_info type_info_for<T>::info = {
 	sizeof(T),
-	[](void *dst, const void *src, size_t count) {
-		for (T *dptr = (T*)dst, *sptr = (T*)src, *dend = dptr + count; dptr != dend; dptr++, sptr++) {
-			new (dptr) T((const T&)(*sptr));
+
+	std::is_trivially_copyable<T>::value ? 
+		[](void *dst, const void *src, size_t count) {
+			memcpy(dst, src, count * sizeof(T));
 		}
-	},
-	[](void *dst, void *src, size_t count) {
-		for (T *dptr = (T*)dst, *sptr = (T*)src, *dend = dptr + count; dptr != dend; dptr++, sptr++) {
-			new (dptr) T(std::move(*sptr));
-			sptr->~T();
+	:
+		[](void *dst, const void *src, size_t count) {
+			for (T *dptr = (T*)dst, *sptr = (T*)src, *dend = dptr + count; dptr != dend; dptr++, sptr++) {
+				new (dptr) T((const T&)(*sptr));
+			}
 		}
-	},
-	[](void *data, size_t count) {
-		for (T *ptr = (T*)data, *end = ptr + count; ptr != end; ptr++) {
-			ptr->~T();
+	,
+
+	std::is_trivially_move_constructible<T>::value && std::is_trivially_destructible<T>::value ? 
+		[](void *dst, void *src, size_t count) {
+			memcpy(dst, src, count * sizeof(T));
 		}
-	},
+	:
+		[](void *dst, void *src, size_t count) {
+			for (T *dptr = (T*)dst, *sptr = (T*)src, *dend = dptr + count; dptr != dend; dptr++, sptr++) {
+				new (dptr) T(std::move(*sptr));
+				sptr->~T();
+			}
+		}
+	,
+
+	std::is_trivially_destructible<T>::value ? 
+		[](void *data, size_t count) { }
+	:
+		[](void *data, size_t count) {
+			for (T *ptr = (T*)data, *end = ptr + count; ptr != end; ptr++) {
+				ptr->~T();
+			}
+		}
+	,
 };
 
 struct array_base
