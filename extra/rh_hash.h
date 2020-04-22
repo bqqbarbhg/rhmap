@@ -92,6 +92,112 @@ type_info type_info_for<T>::info = {
 	},
 };
 
+struct array_base
+{
+	array_base(type_info &type, const allocator *ator) : type(type), ator(ator) { }
+	~array_base() { reset(); }
+
+	array_base(const array_base &rhs);
+	array_base(array_base &&rhs) noexcept : values(rhs.values)
+		, imp_size(rhs.imp_size), imp_capacity(rhs.imp_capacity)
+		, type(rhs.type), ator(rhs.ator) {
+		rhs.values = nullptr;
+	}
+
+	RHMAP_FORCEINLINE bool empty() const noexcept { return imp_size == 0; }
+	RHMAP_FORCEINLINE size_t size() const noexcept { return imp_size; }
+	RHMAP_FORCEINLINE size_t capacity() const noexcept { return imp_capacity; }
+	RHMAP_FORCEINLINE size_t max_size() const noexcept { return UINT32_MAX / 2; }
+
+	array_base &operator=(const array_base &rhs);
+	array_base &operator=(array_base &&rhs) noexcept;
+
+	void reserve(size_t count);
+	void shrink_to_fit();
+
+	void clear() noexcept;
+	void reset();
+
+protected:
+	void *values = nullptr;
+	uint32_t imp_size = 0, imp_capacity = 0;
+	type_info &type;
+	const allocator *ator;
+
+	void imp_grow(size_t min_size);
+};
+
+template <typename T
+	, const allocator *Allocator=&stdlib_allocator>
+struct array : array_base
+{
+	using value_type = T;
+	using size_type = size_t;
+	using difference_type = ptrdiff_t;
+	using reference = value_type&;
+	using const_reference = const value_type&;
+	using iterator = value_type*;
+	using const_iterator = const value_type*;
+
+	explicit array(const allocator *ator=Allocator)
+		: array_base(type_info_for<value_type>::info, ator) { }
+
+	RHMAP_FORCEINLINE iterator begin() noexcept { return ((value_type*)values); }
+	RHMAP_FORCEINLINE const_iterator begin() const noexcept { return ((value_type*)values); }
+	RHMAP_FORCEINLINE const_iterator cbegin() const noexcept { return ((value_type*)values); }
+	RHMAP_FORCEINLINE iterator end() noexcept { return ((value_type*)values) + imp_size; }
+	RHMAP_FORCEINLINE const_iterator end() const noexcept { return ((value_type*)values) + imp_size; }
+	RHMAP_FORCEINLINE const_iterator cend() const noexcept { return ((value_type*)values) + imp_size; }
+	RHMAP_FORCEINLINE value_type *data() noexcept { return (value_type*)values; }
+	RHMAP_FORCEINLINE const value_type *data() const noexcept { return (value_type*)values; }
+
+	void push_back(const T &t) {
+		if (imp_size == imp_capacity) imp_grow(0);
+		new (&((value_type*)values)[imp_size++]) T(t);
+	}
+
+	void push_back(T &&t) {
+		if (imp_size == imp_capacity) imp_grow(0);
+		new (&((value_type*)values)[imp_size++]) T(std::move(t));
+	}
+
+	void pop_back() {
+		RHMAP_ASSERT(imp_size > 0);
+		((value_type*)values)[--imp_size].~T();
+	}
+
+	template <typename... Args>
+	void emplace_back(Args&&... args) {
+		if (imp_size == imp_capacity) imp_grow(0);
+		new (&((value_type*)values)[imp_size++]) T(std::forward<Args>(args)...);
+	}
+
+	T &operator[](size_t index) {
+		RHMAP_ASSERT(index < imp_size);
+		return ((value_type*)values)[index];
+	}
+
+	const T &operator[](size_t index) const {
+		RHMAP_ASSERT(index < imp_size);
+		return ((value_type*)values)[index];
+	}
+
+	void remove_at(size_t index) {
+		value_type *vals = (value_type*)values;
+		RHMAP_ASSERT(index < imp_size);
+		uint32_t size = --imp_size;
+		if (index < size) {
+			vals[index].~T();
+			new (&vals[index]) T(std::move(vals[size]));
+		}
+	}
+
+	void remove(const_iterator pos) {
+		remove_at(pos - (value_type*)values);
+	}
+
+};
+
 struct hash_base
 {
 	hash_base(type_info &type, const allocator *ator) : type(type), ator(ator) { }
@@ -125,8 +231,8 @@ protected:
 
 	void imp_grow(size_t min_size);
 	void imp_rehash(size_t count, size_t alloc_size);
-	void imp_erase_last(uint32_t hash, uint32_t index);
-	void imp_erase_swap(uint32_t hash, uint32_t index, uint32_t swap_hash);
+	void imp_remove_last(uint32_t hash, uint32_t index);
+	void imp_remove_swap(uint32_t hash, uint32_t index, uint32_t swap_hash);
 	void imp_copy(const hash_base &rhs);
 };
 
@@ -205,7 +311,7 @@ struct hash_map : hash_base
 		return const_cast<hash_map*>(this)->find(key);
 	}
 
-	iterator erase(const_iterator pos) {
+	iterator remove(const_iterator pos) {
 		value_type *vals = (value_type*)values;
 		uint32_t index = (uint32_t)(pos - values);
 		uint32_t hash = (uint32_t)hash_fn(vals[pos].key);
@@ -213,16 +319,16 @@ struct hash_map : hash_base
 			uint32_t swap_hash = hash_fn(vals[map.size - 1].key);
 			vals[index].~value_type();
 			new (&vals[index]) value_type(std::move(&vals[map.size]));
-			imp_erase_swap(hash, index, swap_hash);
+			imp_remove_swap(hash, index, swap_hash);
 		} else {
-			imp_erase_last(hash, index);
+			imp_remove_last(hash, index);
 		}
 		vals[map.size].~value_type();
 		return pos;
 	}
 
-	bool erase(const key_type &key) {
-		if (iterator pos = find(key)) { erase(pos); return true; } else { return false; }
+	bool remove(const key_type &key) {
+		if (iterator pos = find(key)) { remove(pos); return true; } else { return false; }
 	}
 
 	mapped_type &operator[](const key_type &key) {
@@ -311,7 +417,7 @@ struct hash_set : hash_base
 		return const_cast<hash_set*>(this)->find(value);
 	}
 
-	iterator erase(const_iterator pos) {
+	iterator remove(const_iterator pos) {
 		value_type *vals = (value_type*)values;
 		uint32_t index = (uint32_t)(pos - values);
 		uint32_t hash = (uint32_t)hash_fn(vals[pos]);
@@ -319,16 +425,16 @@ struct hash_set : hash_base
 			uint32_t swap_hash = hash_fn(vals[map.size - 1]);
 			vals[index].~value_type();
 			new (&vals[index]) value_type(std::move(&vals[map.size]));
-			imp_erase_swap(hash, index, swap_hash);
+			imp_remove_swap(hash, index, swap_hash);
 		} else {
-			imp_erase_last(hash, index);
+			imp_remove_last(hash, index);
 		}
 		vals[map.size].~value_type();
 		return pos;
 	}
 
-	bool erase(const value_type &value) {
-		if (iterator pos = find(value)) { erase(pos); return true; } else { return false; }
+	bool remove(const value_type &value) {
+		if (iterator pos = find(value)) { remove(pos); return true; } else { return false; }
 	}
 
 protected:

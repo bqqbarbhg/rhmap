@@ -68,6 +68,94 @@ uint32_t hash(uint64_t v)
 	return (uint32_t)v;
 }
 
+array_base::array_base(const array_base &rhs) : type(rhs.type), ator(rhs.ator)
+{
+	reserve(rhs.imp_size);
+	type.copy_range(values, rhs.values, rhs.imp_size);
+	imp_size = rhs.imp_size;
+}
+
+array_base &array_base::operator=(const array_base &rhs)
+{
+	if (&rhs == this) return *this;
+	if (ator != rhs.ator) {
+		reset();
+		ator = rhs.ator;
+	} else {
+		clear();
+	}
+	reserve(rhs.imp_size);
+	type.copy_range(values, rhs.values, rhs.imp_size);
+	imp_size = rhs.imp_size;
+	return *this;
+}
+
+array_base &array_base::operator=(array_base &&rhs) noexcept
+{
+	if (&rhs == this) return *this;
+	reset();
+	ator = rhs.ator;
+	values = rhs.values;
+	imp_size = rhs.imp_size;
+	imp_capacity = rhs.imp_capacity;
+	rhs.imp_size = 0;
+	rhs.imp_capacity = 0;
+	rhs.values = nullptr;
+	return *this;
+}
+
+void array_base::reserve(size_t count)
+{
+	if (count > imp_capacity) imp_grow(count);
+}
+
+void array_base::shrink_to_fit()
+{
+	if (imp_size == imp_capacity) return;
+	void *new_values = ator->allocate(ator->user, imp_size * type.size);
+	if (values) {
+		type.move_range(new_values, values, imp_size);
+		ator->free(ator->user, values, imp_capacity * type.size);
+	}
+	values = new_values;
+	imp_capacity = imp_size;
+}
+
+void array_base::clear() noexcept
+{
+	if (imp_size > 0) {
+		type.destruct_range(values, imp_size);
+		imp_size = 0;
+	}
+}
+
+void array_base::reset()
+{
+	if (imp_capacity == 0) return;
+	if (imp_size > 0) {
+		type.destruct_range(values, imp_size);
+		imp_size = 0;
+	}
+	ator->free(ator->user, values, imp_capacity * type.size);
+	imp_capacity = 0;
+	values = nullptr;
+}
+
+void array_base::imp_grow(size_t min_size)
+{
+	size_t new_capacity = (size_t)imp_capacity * 2;
+	if ((new_capacity | min_size) == 0) min_size = 64 / type.size;
+	if (min_size == 0) min_size = 1;
+	if (new_capacity < min_size) new_capacity = min_size;
+	void *new_values = ator->allocate(ator->user, new_capacity * type.size);
+	if (values) {
+		type.move_range(new_values, values, imp_size);
+		ator->free(ator->user, values, imp_capacity * type.size);
+	}
+	values = new_values;
+	imp_capacity = (uint32_t)new_capacity;
+}
+
 hash_base::hash_base(const hash_base &rhs) : type(rhs.type), ator(rhs.ator)
 {
 	imp_copy(rhs);
@@ -142,14 +230,14 @@ void hash_base::imp_rehash(size_t count, size_t alloc_size)
 	if (old_size) ator->free(ator->user, old_data, old_size);
 }
 
-void hash_base::imp_erase_last(uint32_t hash, uint32_t index)
+void hash_base::imp_remove_last(uint32_t hash, uint32_t index)
 {
 	uint32_t scan = 0;
 	rhmap_find_value_inline(&map, hash, &scan, index);
 	rhmap_remove_inline(&map, hash, scan);
 }
 
-void hash_base::imp_erase_swap(uint32_t hash, uint32_t index, uint32_t swap_hash)
+void hash_base::imp_remove_swap(uint32_t hash, uint32_t index, uint32_t swap_hash)
 {
 	uint32_t scan = 0;
 	rhmap_find_value_inline(&map, hash, &scan, index);
