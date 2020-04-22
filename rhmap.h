@@ -57,8 +57,12 @@
 	Alternatively you can define `RHMAP_INLINE` as your preferred inline qualifiers
 	to include `_inline()` variants of the functions. If you define both
 	`RHMAP_IMPLEMENTATION` and `RHMAP_INLINE` you need to include "rhmap.h" twice.
+	You can use `RHMAP_FORCEINLINE` for a default force-inline qualifier.
 
-		#define RHMAP_INLINE static __forceinline
+		#define RHMAP_INLINE static
+		#include "rhmap.h"
+
+		#define RHMAP_INLINE RHMAP_FORCEINLINE
 		#include "rhmap.h"
 
 	Initialize a map by simply zeroing it or call `rhmap_init()`.
@@ -127,7 +131,7 @@
 			if (my_entries[index].key == key) break;
 		}
 
-		rhmap_remove(&map, hash, &scan);
+		rhmap_remove(&map, hash, scan);
 		if (index < map.size) {
 			uint32_t swap_hash = hash_key(&my_entries[map.size].key);
 			rhmap_update_value(&map, swap_hash, map.size, index);
@@ -136,15 +140,10 @@
 
 	To iterate through all the entries in the map you can use `rhmap_next()`.
 	Setting `hash` and `scan` to zero will start iteration from the first entry.
-	`rhmap_remove()` updates the scan value so that you can call `rhmap_next()`
-	afterwards to continue iteration.
 
-		// Remove even values from a U32->U32 map
-		uint32_t hash = 0, scan = 0, value;
-		while (rhmap_next(&map, &hash, &scan, &value)) {
-			if (value % 2 == 0) {
-				rhmap_remove(&map, hash, &scan);
-			}
+		uint32_t hash = 0, scan = 0, index;
+		while (rhmap_next(&map, &hash, &scan, &index)) {
+			// ...
 		}
 
 	You can also provide some defines to customize the behavior:
@@ -171,6 +170,20 @@
 	#include <stdint.h>
 #endif
 
+#ifndef RHMAP_FORCEINLINE
+	#if defined(_MSC_VER)
+		#define RHMAP_FORCEINLINE static __forceinline
+	#elif defined(__GNUC__)
+		#define RHMAP_FORCEINLINE static __attribute__((always_inline, unused))
+	#else
+		#define RHMAP_FORCEINLINE static
+	#endif
+#endif
+
+#ifdef __cplusplus
+	extern "C" {
+#endif
+
 typedef struct rhmap {
 
 	// Internal state
@@ -191,10 +204,14 @@ void rhmap_init(rhmap *map);
 
 // Free the map data and reset to zero.
 // Returns pointer to free, eg. `free(rhmap_reset(map))`.
+// If you don't free the pointer you can use this to move the map to another struct
 void *rhmap_reset(rhmap *map);
 
 // Remove all entries from the map without freeing the internal storage.
 void rhmap_clear(rhmap *map);
+
+// Retrieve the size of the current internal data pointer
+size_t rhmap_alloc_size(const rhmap *map);
 
 // Calculate required entry count and internal allocation size to fit at least one more entry to the map.
 void rhmap_grow(const rhmap *map, size_t *p_count, size_t *p_alloc_size, size_t min_size, double load_factor);
@@ -205,6 +222,7 @@ int rhmap_shrink(const rhmap *map, size_t *p_count, size_t *p_alloc_size, size_t
 // Rehash the map contents, use `rhmap_grow()` or `rhmap_shrink()` to calculate `count` and `alloc_size`.
 // Pass in a new internal data pointer of `alloc_size` bytes, returns the old data pointer.
 // eg. `free(rhmap_rehash(map, count, alloc_size, malloc(alloc_size))`.
+// `data_ptr` must be aligned to the alignof(uint64_t), 8 bytes is safe
 void *rhmap_rehash(rhmap *map, size_t count, size_t alloc_size, void *data_ptr);
 
 // Iterate through all the entries that match `hash`. Returns 1 while there are matching entries, otherwise 0.
@@ -224,8 +242,7 @@ int rhmap_next(const rhmap *map, uint32_t *p_hash, uint32_t *p_scan, uint32_t *p
 void rhmap_set(rhmap *map, uint32_t hash, uint32_t scan, uint32_t value);
 
 // Remove a found entry from the map. `p_scan` must have been returned from `rhmap_find()` or `rhmap_next()`.
-// Adjusts `p_scan` so you can continue iteration after this call.
-void rhmap_remove(rhmap *map, uint32_t hash, uint32_t *p_scan);
+void rhmap_remove(rhmap *map, uint32_t hash, uint32_t scan);
 
 // Optimized utility function to "rename" an existing value.
 // NOTE: An entry with `hash` and `old_value` _must_ exist in the map!
@@ -254,15 +271,19 @@ void rhmap_update_value(rhmap *map, uint32_t hash, uint32_t old_value, uint32_t 
 // }
 void rhmap_find_value(const rhmap *map, uint32_t hash, uint32_t *p_scan, uint32_t value);
 
+#ifdef __cplusplus
+	}
+#endif
+
 #endif
 
 #if (defined(RHMAP_IMPLEMENTATION) && !defined(RHMAP_H_IMPLEMENTED)) || (defined(RHMAP_INLINE) && !defined(RHMAP_H_INLINED))
 
-#ifndef RHMAP_H_IMPLEMENTED
-	#define RHMAP_H_IMPLEMENTED
-#else
+#if defined(RHMAP_INLINE) && !defined(RHMAP_H_INLINED)
 	#define RHMAP_H_INLINED
 	#define RHMAP_DO_INLINE RHMAP_INLINE
+#else
+	#define RHMAP_H_IMPLEMENTED
 #endif
 
 #ifndef RHMAP_DEFAULT_LOAD_FACTOR
@@ -297,6 +318,10 @@ void rhmap_find_value(const rhmap *map, uint32_t hash, uint32_t *p_scan, uint32_
 	#endif
 
 #endif // RHMAP_NO_STDLIB
+
+#ifdef __cplusplus
+	extern "C" {
+#endif
 
 #ifdef RHMAP_DO_INLINE
 RHMAP_DO_INLINE void rhmap_init_inline(rhmap *map)
@@ -333,13 +358,22 @@ void rhmap_clear(rhmap *map)
 }
 
 #ifdef RHMAP_DO_INLINE
-RHMAP_DO_INLINE void rhmap_grow_inline(const rhmap *map, size_t *count, size_t *p_alloc_size, size_t min_size, double load_factor)
+RHMAP_DO_INLINE size_t rhmap_alloc_size_inline(const rhmap *map)
+#else
+size_t rhmap_alloc_size(const rhmap *map)
+#endif
+{
+	return map->mask ? (map->mask + 1) * sizeof(uint64_t) : 0;
+}
+
+#ifdef RHMAP_DO_INLINE
+RHMAP_DO_INLINE void rhmap_grow_inline(const rhmap *map, size_t *p_count, size_t *p_alloc_size, size_t min_size, double load_factor)
 #else
 void rhmap_grow(const rhmap *map, size_t *p_count, size_t *p_alloc_size, size_t min_size, double load_factor)
 #endif
 {
 	size_t num_entries, size;
-	RHMAP_ASSERT(load_factor < 1.0); // Load factor must be either default (<= 0) or less than one
+	RHMAP_ASSERT(load_factor < 1.0); /* Load factor must be either default (<= 0) or less than one */
 	if (load_factor <= 0.0) load_factor = RHMAP_DEFAULT_LOAD_FACTOR;
 	num_entries = map->mask + 1;
 	size = (size_t)((double)num_entries * load_factor);
@@ -359,7 +393,7 @@ int rhmap_shrink(const rhmap *map, size_t *p_count, size_t *p_alloc_size, size_t
 #endif
 {
 	size_t num_entries, size;
-	RHMAP_ASSERT(load_factor < 1.0); // Load factor must be either default (<= 0) or less than one
+	RHMAP_ASSERT(load_factor < 1.0); /* Load factor must be either default (<= 0) or less than one */
 	if (load_factor <= 0.0) load_factor = RHMAP_DEFAULT_LOAD_FACTOR;
 	num_entries = 2;
 	size = (size_t)((double)num_entries * load_factor);
@@ -370,7 +404,7 @@ int rhmap_shrink(const rhmap *map, size_t *p_count, size_t *p_alloc_size, size_t
 	}
 	*p_count = size;
 	*p_alloc_size = num_entries * sizeof(uint64_t);
-	return !map->mask || num_entries != map->mask + 1;
+	return num_entries != map->mask + 1;
 }
 
 #ifdef RHMAP_DO_INLINE
@@ -387,7 +421,7 @@ void *rhmap_rehash(rhmap *map, size_t count, size_t alloc_size, void *data_ptr)
 	map->entries = entries;
 	map->mask = mask;
 	map->capacity = (uint32_t)count;
-	RHMAP_ASSERT(data_ptr); // You must pass a non-NULL pointer to internal storage
+	RHMAP_ASSERT(data_ptr); /* You must pass a non-NULL pointer to internal storage */
 	RHMAP_MEMSET(entries, 0, sizeof(uint64_t) * num_entries);
 	if (old_mask) {
 		uint32_t i;
@@ -450,7 +484,7 @@ void rhmap_insert(rhmap *map, uint32_t hash, uint32_t scan, uint32_t value)
 	uint32_t mask = map->mask;
 	uint32_t slot = (hash + scan) & mask;
 	uint64_t entry, new_entry = (uint64_t)value << 32u | (hash & ~mask);
-	RHMAP_ASSERT(map->capacity > map->size); // You must ensure space before calling `rhmap_insert()`
+	RHMAP_ASSERT(map->capacity > map->size); /* You must ensure space before calling `rhmap_insert()` */
 	scan += 1;
 	while ((entry = entries[slot]) != 0) {
 		uint32_t entry_scan = (entry & mask);
@@ -500,21 +534,20 @@ void rhmap_set(rhmap *map, uint32_t hash, uint32_t scan, uint32_t value)
 	uint32_t mask = map->mask;
 	uint32_t slot = (hash + scan - 1) & mask;
 	uint64_t *entries = map->entries;
-	RHMAP_ASSERT(*p_scan > 0); // Must be called with a found entry
+	RHMAP_ASSERT(scan > 0); /* Must be called with a found entry */
 	entries[slot] = (entries[slot] & 0xffffffffu) | (uint64_t)value << 32u;
 }
 
 #ifdef RHMAP_DO_INLINE
-RHMAP_DO_INLINE void rhmap_remove_inline(rhmap *map, uint32_t hash, uint32_t *p_scan)
+RHMAP_DO_INLINE void rhmap_remove_inline(rhmap *map, uint32_t hash, uint32_t scan)
 #else
-void rhmap_remove(rhmap *map, uint32_t hash, uint32_t *p_scan)
+void rhmap_remove(rhmap *map, uint32_t hash, uint32_t scan)
 #endif
 {
 	uint64_t *entries = map->entries;
-	uint32_t mask = map->mask, scan = *p_scan;
+	uint32_t mask = map->mask;
 	uint32_t slot = (hash + scan - 1) & mask;
-	*p_scan = scan - 1;
-	RHMAP_ASSERT(*p_scan > 0); // Must be called with a found entry
+	RHMAP_ASSERT(scan > 0); /* Must be called with a found entry */
 	for (;;) {
 		uint32_t next_slot = (slot + 1) & mask;
 		uint64_t next_entry = entries[next_slot];
@@ -549,9 +582,10 @@ void rhmap_update_value(rhmap *map, uint32_t hash, uint32_t old_value, uint32_t 
 }
 
 #ifdef RHMAP_DO_INLINE
-RHMAP_DO_INLINE int rhmap_find_value_inline(const rhmap *map, uint32_t hash, uint32_t *p_scan, uint32_t value)
+RHMAP_DO_INLINE void rhmap_find_value_inline(const rhmap *map, uint32_t hash, uint32_t *p_scan, uint32_t value)
 #else
 void rhmap_find_value(const rhmap *map, uint32_t hash, uint32_t *p_scan, uint32_t value)
+#endif
 {
 	uint64_t *entries = map->entries;
 	uint32_t mask = map->mask, scan = *p_scan;
@@ -566,10 +600,13 @@ void rhmap_find_value(const rhmap *map, uint32_t hash, uint32_t *p_scan, uint32_
 		RHMAP_ASSERT((entries[slot] & mask) >= scan);
 	}
 }
-#endif
 
 #ifdef RHMAP_DO_INLINE
 	#undef RHMAP_DO_INLINE
+#endif
+
+#ifdef __cplusplus
+	}
 #endif
 
 #endif // (defined(RHMAP_IMPLEMENTATION) && !defined(RHMAP_H_IMPLEMENTED)) || (defined(RHMAP_INLINE) && !defined(RHMAP_H_INLINED))
