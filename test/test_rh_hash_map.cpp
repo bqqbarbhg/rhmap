@@ -1,71 +1,166 @@
 #include "../extra/rh_hash.h"
 
-#include <string>
-#include <functional>
-#include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <vector>
+#include <unordered_map>
 
-namespace ns {
+#include "cputime.h"
 
-	struct handle {
-		uint32_t index;
+bool g_cputime_init = false;
 
-		handle(uint32_t v) : index(v) { }
-
-		bool operator==(const handle &rhs) const { return index == rhs.index; }
-	};
-
-	void *allocate(void *user, size_t size) {
-		printf("Alloc: %zu\n", size);
-		return ::malloc(size);
+bool bench_count_rh(size_t num)
+{
+	rh::hash_map<int, int> map;
+	for (size_t i = 0; i < num; i++) {
+		int key = (int)(i * 2654435761u) & 0xffff;
+		map[key]++;
 	}
 
-	void free(void *user, void *ptr, size_t size) {
-		printf("Free: %zu\n", size);
-		::free(ptr);
+	for (size_t i = 0; i < num; i++) {
+		int key = (int)(i * 2654435761u) & 0xffff;
+		auto it = map.find(key);
+		if (it->key != key) return false;
 	}
 
-	rh::allocator alloc = {
-		NULL, &allocate, &free
-	};
-
-	template <typename K, typename V, typename Hash=rh::default_hash<K>>
-	using HashMap = rh::hash_map<K, V, Hash, &alloc>;
-
-	template <typename T>
-	using Array = rh::array<T, &alloc>;
-
+	return true;
 }
+
+bool bench_count_std(size_t num)
+{
+	std::unordered_map<int, int> map;
+	for (size_t i = 0; i < num; i++) {
+		int key = (int)(i * 2654435761u) & 0xffff;
+		map[key]++;
+	}
+
+	for (size_t i = 0; i < num; i++) {
+		int key = (int)(i * 2654435761u) & 0xffff;
+		auto it = map.find(key);
+		if (it->first != key) return false;
+	}
+
+	return true;
+}
+
+bool bench_remove_rh(size_t num)
+{
+	rh::hash_map<int, int> map;
+	for (size_t i = 0; i < num; i++) {
+		int key = (int)(i * 2654435761u) & 0xffff;
+		map[key]++;
+	}
+
+	for (auto it = map.begin(); it != map.end(); ) {
+		if (it->value % 7 != 0) {
+			map.remove(it);
+		} else {
+			++it;
+		}
+	}
+
+	for (auto pair : map) {
+		if (pair.value % 7 != 0) return false;
+	}
+
+	return true;
+}
+
+bool bench_remove_std(size_t num)
+{
+	std::unordered_map<int, int> map;
+	for (size_t i = 0; i < num; i++) {
+		int key = (int)(i * 2654435761u) & 0xffff;
+		map[key]++;
+	}
+
+	for (auto it = map.begin(); it != map.end(); ) {
+		if (it->second % 7 != 0) {
+			it = map.erase(it);
+		} else {
+			++it;
+		}
+	}
+
+	for (auto pair : map) {
+		if (pair.second % 7 != 0) return false;
+	}
+
+	return true;
+}
+
+bool bench_map_of_arrays_rh(size_t num)
+{
+	rh::hash_map<int, rh::array<int>> map;
+	for (size_t i = 0; i < num; i++) {
+		int key = (int)(i * 2654435761u);
+		map[key & 0xffff].push_back(key);
+	}
+
+	for (auto &pair : map) {
+		for (int val : pair.value) {
+			if ((val & 0xffff) != (pair.key & 0xffff)) return false;
+		}
+	}
+
+	return true;
+}
+
+bool bench_map_of_arrays_std(size_t num)
+{
+	std::unordered_map<int, std::vector<int>> map;
+	for (size_t i = 0; i < num; i++) {
+		int key = (int)(i * 2654435761u);
+		map[key & 0xffff].push_back(key);
+	}
+
+	for (auto &pair : map) {
+		for (int val : pair.second) {
+			if ((val & 0xffff) != (pair.first & 0xffff)) return false;
+		}
+	}
+
+	return true;
+}
+
+void timeit_imp(const char *name, bool (*func)(size_t num), size_t num)
+{
+	uint64_t begin = cputime_cpu_tick();
+	if (!func(num)) {
+		fprintf(stderr, "Failed: %s\n", name);
+		exit(1);
+	}
+	uint64_t end = cputime_cpu_tick();
+
+	if (!g_cputime_init) {
+		cputime_end_init();
+		g_cputime_init = true;
+	}
+
+	double sec = cputime_cpu_delta_to_sec(nullptr, end - begin);
+	printf("%s: %.2fns (%.2fcy)\n", name, sec*1e9 / (double)num, (double)(end - begin) / (double)num);
+}
+
+#define timeit(name, num) timeit_imp(#name, &name, num)
 
 int main(int argc, char **argv)
 {
-	rh::hash_map<std::string, int> map;
-	rh::hash_map<int, std::string> map2;
-	ns::HashMap<ns::handle, std::string, rh::buffer_hash<ns::handle>> map3;
-	rh::hash_set<int> set;
-	rh::array<std::string> arr;
-	ns::Array<ns::handle> arr2;
-	rh::hash_map<rh::array<std::string>, int> arrmap;
+	cputime_begin_init();
 
-	for (int i = 0; i < 1000; i++) {
-		map[std::to_string(i)] = i;
-		map2[i] = std::to_string(i);
-		map3[{(uint32_t)i}] = std::to_string(i);
-		set.insert(i/2);
-		arr.push_back(std::to_string(i));
-		arr2.emplace_back((uint32_t)i);
-		arrmap[arr] = i;
+	{
+		size_t num = 1000000;
+		timeit(bench_count_rh, num);
+		timeit(bench_count_std, num);
 	}
 
-	assert(map.size() == 1000);
+	{
+		size_t num = 1000000;
+		timeit(bench_remove_rh, num);
+		timeit(bench_remove_std, num);
+	}
 
-	for (int i = 0; i < 1000; i++) {
-		std::string str = std::to_string(i);
-		auto it = map.find(str);
-		assert(it->key == std::to_string(i));
-		assert(it->value == i);
-		assert((set.find(i) != nullptr) == (i < 500));
+	{
+		size_t num = 1000000;
+		timeit(bench_map_of_arrays_rh, num);
+		timeit(bench_map_of_arrays_std, num);
 	}
 
 	return 0;

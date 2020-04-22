@@ -346,18 +346,18 @@ struct hash_map : hash_base
 
 	iterator remove(const_iterator pos) {
 		value_type *vals = (value_type*)values;
-		uint32_t index = (uint32_t)(pos - values);
-		uint32_t hash = (uint32_t)hash_fn(vals[pos].key);
+		uint32_t index = (uint32_t)(pos - vals);
+		uint32_t hash = (uint32_t)hash_fn(vals[index].key);
 		if (index + 1 < map.size) {
 			uint32_t swap_hash = hash_fn(vals[map.size - 1].key);
 			vals[index].~value_type();
-			new (&vals[index]) value_type(std::move(&vals[map.size]));
+			new (&vals[index]) value_type(std::move(vals[map.size - 1]));
 			imp_remove_swap(hash, index, swap_hash);
 		} else {
 			imp_remove_last(hash, index);
 		}
 		vals[map.size].~value_type();
-		return pos;
+		return (iterator)pos;
 	}
 
 	bool remove(const key_type &key) {
@@ -452,18 +452,19 @@ struct hash_set : hash_base
 
 	iterator remove(const_iterator pos) {
 		value_type *vals = (value_type*)values;
-		uint32_t index = (uint32_t)(pos - values);
-		uint32_t hash = (uint32_t)hash_fn(vals[pos]);
+		uint32_t index = (uint32_t)(pos - vals);
+		uint32_t hash = (uint32_t)hash_fn(vals[index]);
+		value_type &removed = vals[index], &swap = vals[map.size - 1];
 		if (index + 1 < map.size) {
-			uint32_t swap_hash = hash_fn(vals[map.size - 1]);
-			vals[index].~value_type();
-			new (&vals[index]) value_type(std::move(&vals[map.size]));
+			uint32_t swap_hash = hash_fn(swap);
+			removed.~value_type();
+			new (&removed) value_type(std::move(swap));
 			imp_remove_swap(hash, index, swap_hash);
 		} else {
 			imp_remove_last(hash, index);
 		}
-		vals[map.size].~value_type();
-		return pos;
+		removed.~value_type();
+		return (iterator)pos;
 	}
 
 	bool remove(const value_type &value) {
