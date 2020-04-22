@@ -59,10 +59,7 @@
 	`RHMAP_IMPLEMENTATION` and `RHMAP_INLINE` you need to include "rhmap.h" twice.
 	You can use `RHMAP_FORCEINLINE` for a default force-inline qualifier.
 
-		#define RHMAP_INLINE static
-		#include "rhmap.h"
-
-		#define RHMAP_INLINE RHMAP_FORCEINLINE
+		#define RHMAP_INLINE static RHMAP_FORCEINLINE
 		#include "rhmap.h"
 
 	Initialize a map by simply zeroing it or call `rhmap_init()`.
@@ -172,11 +169,11 @@
 
 #ifndef RHMAP_FORCEINLINE
 	#if defined(_MSC_VER)
-		#define RHMAP_FORCEINLINE static __forceinline
+		#define RHMAP_FORCEINLINE __forceinline
 	#elif defined(__GNUC__)
-		#define RHMAP_FORCEINLINE static __attribute__((always_inline, unused))
+		#define RHMAP_FORCEINLINE __attribute__((always_inline, unused))
 	#else
-		#define RHMAP_FORCEINLINE static
+		#define RHMAP_FORCEINLINE
 	#endif
 #endif
 
@@ -561,7 +558,7 @@ void rhmap_remove(rhmap *map, uint32_t hash, uint32_t scan)
 }
 
 #ifdef RHMAP_DO_INLINE
-RHMAP_DO_INLINE void rhmap_update_inline(rhmap *map, uint32_t hash, uint32_t old_value, uint32_t new_value)
+RHMAP_DO_INLINE void rhmap_update_value_inline(rhmap *map, uint32_t hash, uint32_t old_value, uint32_t new_value)
 #else
 void rhmap_update_value(rhmap *map, uint32_t hash, uint32_t old_value, uint32_t new_value)
 #endif
