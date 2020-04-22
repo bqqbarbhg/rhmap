@@ -62,9 +62,10 @@ extern const allocator stdlib_allocator;
 
 struct type_info {
 	size_t size;
-	void (*copy_range)(void *dst, const void *src, size_t count);
-	void (*move_range)(void *dst, void *src, size_t count);
+	void (*copy_range)(void *dst, const void *src, size_t count, size_t size);
+	void (*move_range)(void *dst, void *src, size_t count, size_t size);
 	void (*destruct_range)(void *data, size_t count);
+	bool (*equal_range)(const void *a, const void *b, size_t count);
 };
 
 template <typename T>
@@ -72,44 +73,47 @@ struct type_info_for : type_info {
 	static type_info info;
 };
 
+void trivial_copy_range(void *dst, const void *src, size_t count, size_t size);
+void trivial_move_range(void *dst, void *src, size_t count, size_t size);
+void trivial_destruct_range(void *data, size_t count);
+
+template <typename T>
+inline void template_copy_range(void *dst, const void *src, size_t count, size_t size) {
+	for (T *dptr = (T*)dst, *sptr = (T*)src, *dend = dptr + count; dptr != dend; dptr++, sptr++) {
+		new (dptr) T((const T&)(*sptr));
+	}
+}
+
+template <typename T>
+inline void template_move_range(void *dst, void *src, size_t count, size_t size) {
+	for (T *dptr = (T*)dst, *sptr = (T*)src, *dend = dptr + count; dptr != dend; dptr++, sptr++) {
+		new (dptr) T(std::move(*sptr));
+		sptr->~T();
+	}
+}
+
+template <typename T>
+inline void template_destruct_range(void *data, size_t count) {
+	for (T *ptr = (T*)data, *end = ptr + count; ptr != end; ptr++) {
+		ptr->~T();
+	}
+}
+
+template <typename T>
+inline bool template_equal_range(const void *a, const void *b, size_t count) {
+	for (T *aptr = (T*)a, *bptr = (T*)b, *aend = aptr + count; aptr != aend; aptr++, bptr++) {
+		if (!(*aptr == *bptr)) return false;
+	}
+	return true;
+}
+
 template <typename T>
 type_info type_info_for<T>::info = {
 	sizeof(T),
-
-	std::is_trivially_copyable<T>::value ? 
-		[](void *dst, const void *src, size_t count) {
-			memcpy(dst, src, count * sizeof(T));
-		}
-	:
-		[](void *dst, const void *src, size_t count) {
-			for (T *dptr = (T*)dst, *sptr = (T*)src, *dend = dptr + count; dptr != dend; dptr++, sptr++) {
-				new (dptr) T((const T&)(*sptr));
-			}
-		}
-	,
-
-	std::is_trivially_move_constructible<T>::value && std::is_trivially_destructible<T>::value ? 
-		[](void *dst, void *src, size_t count) {
-			memcpy(dst, src, count * sizeof(T));
-		}
-	:
-		[](void *dst, void *src, size_t count) {
-			for (T *dptr = (T*)dst, *sptr = (T*)src, *dend = dptr + count; dptr != dend; dptr++, sptr++) {
-				new (dptr) T(std::move(*sptr));
-				sptr->~T();
-			}
-		}
-	,
-
-	std::is_trivially_destructible<T>::value ? 
-		[](void *data, size_t count) { }
-	:
-		[](void *data, size_t count) {
-			for (T *ptr = (T*)data, *end = ptr + count; ptr != end; ptr++) {
-				ptr->~T();
-			}
-		}
-	,
+	std::is_trivially_copyable<T>::value ? &trivial_copy_range : &template_copy_range<T>,
+	std::is_trivially_move_constructible<T>::value && std::is_trivially_destructible<T>::value ? &trivial_move_range : &template_move_range<T>,
+	std::is_trivially_destructible<T>::value ? &trivial_destruct_range : &template_destruct_range<T>,
+	&template_equal_range<T>,
 };
 
 struct array_base
@@ -122,6 +126,7 @@ struct array_base
 		, imp_size(rhs.imp_size), imp_capacity(rhs.imp_capacity)
 		, type(rhs.type), ator(rhs.ator) {
 		rhs.values = nullptr;
+		rhs.imp_size = rhs.imp_capacity = 0;
 	}
 
 	RHMAP_FORCEINLINE bool empty() const noexcept { return imp_size == 0; }
@@ -137,6 +142,9 @@ struct array_base
 
 	void clear() noexcept;
 	void reset();
+
+	bool operator==(const array_base &rhs) const;
+	RHMAP_FORCEINLINE bool operator!=(const array_base &rhs) const { return !(*this == rhs); }
 
 protected:
 	void *values = nullptr;
@@ -215,7 +223,6 @@ struct array : array_base
 	void remove(const_iterator pos) {
 		remove_at(pos - (value_type*)values);
 	}
-
 };
 
 struct hash_base
@@ -243,6 +250,9 @@ struct hash_base
 	void clear() noexcept;
 	void reset();
 
+	bool operator==(const hash_base &rhs) const;
+	RHMAP_FORCEINLINE bool operator!=(const hash_base &rhs) const { return !(*this == rhs); }
+
 protected:
 	rhmap map = { };
 	void *values = nullptr;
@@ -260,6 +270,9 @@ template <typename K, typename V>
 struct kv_pair {
 	K key;
 	V value;
+
+	bool operator==(const kv_pair &rhs) const { return key == rhs.key && value == rhs.value; }
+	bool operator!=(const kv_pair &rhs) const { return !(*this == rhs); }
 };
 
 template <typename T>
@@ -483,6 +496,36 @@ protected:
 		return &vals[index];
 	}
 };
+
+template <typename T, const allocator *Allocator>
+uint32_t hash(const array<T, Allocator> &arr) {
+	const uint32_t seed = UINT32_C(0x9e3779b9);
+	uint32_t h = 0;
+	for (auto &pair : arr) {
+		h = ((h << 5u | h >> 27u) ^ (uint32_t)hash(pair)) * seed;
+	}
+	return h;
+}
+
+template <typename K, typename V, typename Hash, const allocator *Allocator>
+uint32_t hash(const hash_map<K, V, Hash, Allocator> &map) {
+	const uint32_t seed = UINT32_C(0x9e3779b9);
+	uint32_t h = 0;
+	for (auto &pair : map) {
+		h = ((h << 5u | h >> 27u) ^ (uint32_t)hash(pair)) * seed;
+	}
+	return h;
+}
+
+template <typename T, typename Hash, const allocator *Allocator>
+uint32_t hash(const hash_set<T, Hash, Allocator> &map) {
+	const uint32_t seed = UINT32_C(0x9e3779b9);
+	uint32_t h = 0;
+	for (auto &pair : map) {
+		h = ((h << 5u | h >> 27u) ^ (uint32_t)hash(pair)) * seed;
+	}
+	return h;
+}
 
 }
 #endif

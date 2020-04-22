@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?> 
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+
+  <Type Name="rh::array&lt;*,*&gt;">
+    <DisplayString>{{ size={imp_size} }}</DisplayString>
+    <Expand>
+      <Item Name="size">imp_size</Item>
+      <Item Name="capacity">imp_capacity</Item>
+      <ArrayItems>
+        <Size>imp_size</Size>
+        <ValuePointer>($T1*)values</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+
+  <Type Name="rh::hash_map&lt;*,*,*,*&gt;">
+    <DisplayString>{{ size={map.size} }}</DisplayString>
+    <Expand>
+      <Item Name="size">map.size</Item>
+      <Item Name="capacity">map.capacity</Item>
+      <ArrayItems>
+        <Size>map.size</Size>
+        <ValuePointer>(rh::kv_pair&lt;$T1,$T2&gt;*)values</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+
+  <Type Name="rh::hash_set&lt;*,*,*&gt;">
+    <DisplayString>{{ size={map.size} }}</DisplayString>
+    <Expand>
+      <Item Name="size">map.size</Item>
+      <Item Name="capacity">map.capacity</Item>
+      <ArrayItems>
+        <Size>map.size</Size>
+        <ValuePointer>($T1*)values</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+
+
+</AutoVisualizer>

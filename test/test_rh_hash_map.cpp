@@ -46,6 +46,7 @@ int main(int argc, char **argv)
 	rh::hash_set<int> set;
 	rh::array<std::string> arr;
 	ns::Array<ns::handle> arr2;
+	rh::hash_map<rh::array<std::string>, int> arrmap;
 
 	for (int i = 0; i < 1000; i++) {
 		map[std::to_string(i)] = i;
@@ -54,6 +55,7 @@ int main(int argc, char **argv)
 		set.insert(i/2);
 		arr.push_back(std::to_string(i));
 		arr2.emplace_back((uint32_t)i);
+		arrmap[arr] = i;
 	}
 
 	assert(map.size() == 1000);
